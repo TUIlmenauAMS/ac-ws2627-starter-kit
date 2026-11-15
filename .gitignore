@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.DS_Store
+# built by prepare_test_set(); SQAM clips must not be redistributed
+testset/
