@@ -479,16 +479,21 @@ def _git_out(*args, cwd=None):
 def c_gitlab(ctx):
     base = os.path.join(ctx.workdir, "gitlab")
     shutil.rmtree(base, ignore_errors=True)
-    proj = os.path.join(base, "colab_session1")          # what /content looks like after the demo notebook
-    os.makedirs(os.path.join(proj, "results"))
-    shutil.copytree(ctx.kit, os.path.join(proj, "starter_kit"),
-                    ignore=shutil.ignore_patterns(".git", "testset", "__pycache__", ".ipynb_checkpoints"))
-    shutil.copytree(ctx.testset_dir, os.path.join(proj, "starter_kit", "testset"))   # built in session 1
-    shutil.copytree(ctx.repo("Python-Audio-Coder"), os.path.join(proj, "Python-Audio-Coder"))
-    with open(os.path.join(proj, "results", "baseline.csv"), "w") as f:
-        f.write("testset,clip\nx,y\n")
+    def session(d, results=True):
+        """What /content looks like after the demo notebook (kit, test set, coder, baseline)."""
+        shutil.copytree(ctx.kit, os.path.join(d, "starter_kit"),
+                        ignore=shutil.ignore_patterns(".git", "testset", "__pycache__", ".ipynb_checkpoints"))
+        shutil.copytree(ctx.testset_dir, os.path.join(d, "starter_kit", "testset"))
+        shutil.copytree(ctx.repo("Python-Audio-Coder"), os.path.join(d, "Python-Audio-Coder"))
+        if results:
+            os.makedirs(os.path.join(d, "results"))
+            with open(os.path.join(d, "results", "baseline.csv"), "w") as f:
+                f.write("testset,clip\nx,y\n")
+        return d
+
     report = []
     for variant in ("empty", "with_readme"):              # GitLab project created empty, or with a README
+        proj = session(os.path.join(base, "colab_session1_%s" % variant))
         bare = os.path.join(base, "remote_%s" % variant, "ac-ws2627-p99a.git")
         os.makedirs(bare)
         _git_out("init", "-q", "--bare", cwd=bare)
@@ -505,6 +510,10 @@ def c_gitlab(ctx):
         out = ctx.run_py(GITLAB_SNIPPET, proj, PROJECT=q(proj), PARENT=q(proj), URL=q(url),
                          NAME=q("ac-ws2627-p99a"))
         assert "Baseline commit" in out and "OK" in out, out[-600:]
+        # the copies outside the repository are gone (they are identical to the repository's)
+        left = [n for n in ("starter_kit", "Python-Audio-Coder", "results", "not_in_your_repository")
+                if os.path.exists(os.path.join(proj, n))]
+        assert not left, "left outside the repository after the first session: %s" % left
         files = _git_out("ls-tree", "-r", "--name-only", "main", cwd=bare).splitlines()
         modes = _git_out("ls-tree", "-r", "main", cwd=bare)
         for f in ("starter_kit/ac_kit.py", "starter_kit/gitlab_repo.py", "Python-Audio-Coder/audio_encoder.py",
@@ -517,18 +526,23 @@ def c_gitlab(ctx):
         if variant == "with_readme":
             assert "README.md" in files, "the existing README was lost"
         # later session, another member: fresh folder, only the kit from GitHub, nothing to copy
-        later = os.path.join(base, "colab_session2_%s" % variant)
-        shutil.copytree(os.path.join(proj, "starter_kit"), os.path.join(later, "starter_kit"),
-                        ignore=shutil.ignore_patterns("testset"))
-        shutil.copytree(ctx.testset_dir, os.path.join(later, "starter_kit", "testset"))
+        later = session(os.path.join(base, "colab_session2_%s" % variant), results=False)
         n_before = _git_out("rev-list", "--count", "main", cwd=bare)
         out2 = ctx.run_py(GITLAB_SNIPPET, later, PROJECT=q(later), PARENT=q(later), URL=q(url),
                           NAME=q("ac-ws2627-p99a"))
         assert "cloned" in out2 and "OK" in out2 and "Baseline commit" not in out2, out2[-600:]
         assert _git_out("rev-list", "--count", "main", cwd=bare) == n_before, "the later session committed"
+        assert not os.path.exists(os.path.join(later, "starter_kit")), "fresh kit copy left outside the repository"
+        assert not os.path.exists(os.path.join(later, "Python-Audio-Coder")), "fresh coder left outside"
         if variant == "empty":
             report.append(_check_save(ctx, bare, os.path.join(proj, "ac-ws2627-p99a"),
                                       os.path.join(later, "ac-ws2627-p99a")))
+            # a third session: the repository's coder now differs from the fresh one, which is moved, not deleted
+            third = session(os.path.join(base, "colab_session3"), results=False)
+            out3 = ctx.run_py(GITLAB_SNIPPET, third, PROJECT=q(third), PARENT=q(third), URL=q(url),
+                              NAME=q("ac-ws2627-p99a"))
+            assert "not_in_your_repository" in out3 and "OK" in out3, out3[-500:]
+            assert os.path.isdir(os.path.join(third, "not_in_your_repository", "Python-Audio-Coder")), "coder not kept"
         shutil.rmtree(os.path.join(proj, "ac-ws2627-p99a"))
         report.append("%s: %d files pushed" % (variant, len(files)))
     return "; ".join(report)

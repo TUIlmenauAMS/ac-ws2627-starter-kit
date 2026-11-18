@@ -217,9 +217,57 @@ def start(repo):
             and os.path.abspath(old_testset) != os.path.abspath(new_testset)):
         shutil.copytree(old_testset, new_testset)     # same clips (checked by hash when built): no new download
     tid = ac_kit.prepare_test_set()
+    _tidy_outside(repo, os.path.dirname(KIT))
     print("working in %s (kit %s, test set %s)." % (repo, ac_kit.KIT_VERSION, tid))
+    print("Change your files there (Files panel: folder %s)." % os.path.basename(repo))
     print('Save your work before you close Colab:  gitlab_repo.save("what you changed")')
     return ac_kit
+
+
+SKIP = {".git", "testset", "__pycache__", ".ipynb_checkpoints", ".DS_Store"}
+
+
+def _differs(outside, inside):
+    """Files under `outside` that are missing or different under `inside` (relative paths)."""
+    import filecmp
+    diff = []
+    for root, dirs, files in os.walk(outside):
+        dirs[:] = [d for d in dirs if d not in SKIP]
+        for f in files:
+            if f in SKIP or f.endswith(".pyc"):
+                continue
+            a = os.path.join(root, f)
+            rel = os.path.relpath(a, outside)
+            b = os.path.join(inside, rel)
+            if not os.path.isfile(b) or not filecmp.cmp(a, b, shallow=False):
+                diff.append(rel)
+    return diff
+
+
+def _tidy_outside(repo, project):
+    """Clear the copies the notebook set up outside the repository (starter_kit/, course code, results/),
+    so that nobody changes a file that is not in the repository. Copies identical to the repository's
+    are deleted; others (e.g. the fresh coder of a later session, or a file changed outside by mistake)
+    are moved to not_in_your_repository/, so nothing is lost."""
+    project, repo = os.path.abspath(project), os.path.abspath(repo)
+    if project == repo or os.path.commonpath([project, repo]) != project:
+        return
+    moved = []
+    for name in ["starter_kit", "results"] + COURSE_CODE + [setup_topic.ADSP]:
+        outside, inside = os.path.join(project, name), os.path.join(repo, name)
+        if not os.path.isdir(outside):
+            continue
+        if name == setup_topic.ADSP or (os.path.isdir(inside) and not _differs(outside, inside)):
+            setup_topic.remove_tree(outside)
+            continue
+        park = os.path.join(project, "not_in_your_repository")
+        os.makedirs(park, exist_ok=True)
+        setup_topic.remove_tree(os.path.join(park, name))
+        shutil.move(outside, os.path.join(park, name))
+        moved.append(name)
+    if moved:
+        print("Moved %s to not_in_your_repository/: copies outside your repository, never saved to GitLab."
+              % ", ".join(moved))
 
 
 def _toplevel(path=None):
@@ -232,7 +280,7 @@ def save(message, repo=None):
 
     `message` says what you changed (e.g. "KBD window with beta = 4 in encoder and decoder").
     If a teammate changed the same lines in the meantime, the main branch is left as it is: your version
-    is pushed to a branch of its own (printed), so nothing is lost. Returns the commit hash."""
+    is pushed to a branch of its own (printed), so nothing is lost."""
     message = (message or "").strip()
     if not message:
         raise SystemExit('Say what you changed, e.g. gitlab_repo.save("KBD window in encoder and decoder")')
@@ -266,20 +314,20 @@ def save(message, repo=None):
                 print("A teammate changed the same lines in: %s" % (", ".join(files) or "(see GitLab)"))
                 print("Decide together which version to keep (GitLab shows both: Code -> Branches), then ask in the "
                       "forum if you need help bringing them together.")
-                return _run(["rev-parse", "HEAD"], cwd=repo)
+                return None
         ahead = _run(["rev-list", "--count", "origin/%s..HEAD" % branch], cwd=repo, check=False) if has_remote else "1"
         if ahead in ("", "0"):
             print("Nothing new to save: GitLab already has everything." if not made else "Saved.")
-            return _run(["rev-parse", "HEAD"], cwd=repo)
+            return None
         r = subprocess.run(["git", "push", "-q", "-u", "origin", "HEAD"], cwd=repo, capture_output=True, text=True,
                            env=dict(os.environ, GIT_TERMINAL_PROMPT="0"))
         if r.returncode == 0:
             commit = _run(["rev-parse", "HEAD"], cwd=repo)
             print("Saved in GitLab: %s (%s)" % (commit[:8], message if made else "teammates' changes merged"))
-            return commit
+            return None
         if attempt == 2:
             _run(["push", "-q", "-u", "origin", "HEAD"], cwd=repo)   # raises with the git message and a hint
-    return _run(["rev-parse", "HEAD"], cwd=repo)
+    return None
 
 
 def use_repository(url, token=None, name="", email="", project=None):
