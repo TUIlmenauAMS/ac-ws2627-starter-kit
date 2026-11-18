@@ -282,6 +282,9 @@ def save(message, repo=None):
     If a teammate changed the same lines in the meantime, the main branch is left as it is: your version
     is pushed to a branch of its own (printed), so nothing is lost."""
     message = (message or "").strip()
+    if message.lower().startswith("what you changed"):
+        raise SystemExit("Replace the example text with what you changed, e.g. "
+                         'gitlab_repo.save("KBD window in encoder and decoder"), then run the cell again.')
     if not message:
         raise SystemExit('Say what you changed, e.g. gitlab_repo.save("KBD window in encoder and decoder")')
     repo = repo or _toplevel()
