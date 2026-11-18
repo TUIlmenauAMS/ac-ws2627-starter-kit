@@ -32,7 +32,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 KIT = os.path.dirname(os.path.abspath(__file__))
 if KIT not in sys.path:
@@ -74,7 +74,10 @@ def _run(args, cwd=None, check=True):
         out = out.replace(_secret["token"], "***")
     if check and r.returncode != 0:
         hint = ""
-        if any(s in out for s in ("Authentication failed", "could not read Username", "HTTP Basic", "403", "401")):
+        if "could not read Username" in out:
+            hint = ("\nGit got no access token. Run the cell again and paste the token when it asks (on your own "
+                    "computer without a token: log in to GitLab with git first).")
+        elif any(s in out for s in ("Authentication failed", "HTTP Basic", "403", "401")):
             hint = ("\nCheck the access token (scopes read_repository and write_repository, not expired) and that "
                     "you are a member of the repository.")
         elif "not found" in out.lower() or "does not appear to be a git repository" in out:
@@ -86,14 +89,19 @@ def _run(args, cwd=None, check=True):
 
 def _credential_args(url, token):
     """git -c options that give `token` to git for this session, from a file outside any repository."""
-    if not token or not url.startswith("https://"):
-        return []
+    if token is None or not url.startswith("https://"):
+        return []                                   # your own git login (on your own computer), or a test
+    # a pasted token often brings a space or line break with it; git would then ignore the whole line
+    token = "".join((token or "").split())
+    if not token:
+        raise SystemExit("No access token entered: run the cell again and paste your GitLab access token "
+                         "(GitLab: user settings -> Access tokens) when it asks.")
     _secret["token"] = token
     host = urlsplit(url).netloc
     path = os.path.join(tempfile.gettempdir(), "ac_gitlab_credentials")
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
-        f.write("https://oauth2:%s@%s\n" % (token, host))
+        f.write("https://oauth2:%s@%s\n" % (quote(token, safe=""), host))
     return ["-c", "credential.helper=", "-c", "credential.helper=store --file=%s" % path.replace("\\", "/")]
 
 
