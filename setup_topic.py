@@ -6,12 +6,15 @@ Run it in your project folder (the folder that contains starter_kit/). For your 
   * clones each course repository it needs into this folder and checks out the commit the kit was
     tested with (so everyone works with the same code, also if a repository changes later), and
   * copies the kit files the topic needs into Python-Audio-Coder (START_HERE.md says which).
+The cloned folders get no .git folder of their own (a file .kit_source records the repository and
+commit instead), so they can go straight into your group's GitLab repository with your changes.
 Running it again is safe: folders that are already there are checked, not cloned again.
 Options: --list (only print what it would do), --dest FOLDER (instead of the current folder).
 """
 
 import argparse
 import glob
+import json
 import os
 import shutil
 import subprocess
@@ -68,8 +71,19 @@ def _git(*args, cwd=None):
     return r.stdout.strip()
 
 
+MARKER = ".kit_source"     # written into every folder clone() creates, instead of a .git folder
+
+
 def head(dest):
-    """Commit of the clone in `dest`, or None if it is not a git clone."""
+    """Commit of the course code in `dest`: from its .kit_source file (folders made by clone()), else
+    from its .git folder (a git clone), else None."""
+    marker = os.path.join(dest, MARKER)
+    if os.path.isfile(marker):
+        try:
+            with open(marker) as f:
+                return json.load(f)["commit"]
+        except (ValueError, KeyError, OSError):
+            return None
     if not os.path.isdir(os.path.join(dest, ".git")):
         return None
     try:
@@ -81,8 +95,10 @@ def head(dest):
 def clone(name, dest=None, base=None):
     """Clone course repository `name` into `dest` (default ./name) at the commit the kit was tested with.
 
-    Only that commit is downloaded. A folder that is already there is left as it is; a warning says
-    so if it is not at the kit's commit. Returns (dest, message)."""
+    Only that commit is downloaded. The clone's .git folder is then removed and replaced by a file
+    .kit_source (repository, commit), so the folder can be committed to another repository as plain
+    files. A folder that is already there is left as it is; a warning says so if it is not at the
+    kit's commit. Returns (dest, message)."""
     dest = os.path.abspath(dest or name)
     commit = REPOS[name]
     if os.path.exists(dest):
@@ -90,8 +106,8 @@ def clone(name, dest=None, base=None):
         if h == commit:
             return dest, "%s: already there, at the kit's commit %s" % (name, commit[:7])
         if h is None:
-            return dest, ("%s: WARNING: the folder is there but is not a git clone; kept as it is. The kit was "
-                          "tested with commit %s." % (name, commit[:7]))
+            return dest, ("%s: WARNING: the folder is there but was not set up by the kit; kept as it is. The kit "
+                          "was tested with commit %s." % (name, commit[:7]))
         return dest, ("%s: WARNING: the folder is there at commit %s, the kit was tested with %s.\n"
                       "  To use the kit's version: git -C %s fetch origin %s && git -C %s checkout %s"
                       % (name, h[:7], commit[:7], dest, commit, dest, commit))
@@ -109,9 +125,31 @@ def clone(name, dest=None, base=None):
     except Exception:
         shutil.rmtree(dest, ignore_errors=True)
         raise
-    if head(dest) != commit:
-        raise RuntimeError("%s: checked out %s instead of %s" % (name, head(dest), commit))
+    got = head(dest)
+    if got != commit:
+        shutil.rmtree(dest, ignore_errors=True)
+        raise RuntimeError("%s: checked out %s instead of %s" % (name, got, commit))
+    # plain files from here on: no nested repository inside the group's GitLab repository
+    remove_tree(os.path.join(dest, ".git"))
+    with open(os.path.join(dest, MARKER), "w") as f:
+        json.dump({"repository": url, "commit": commit}, f)
+        f.write("\n")
     return dest, "%s: cloned at commit %s" % (name, commit[:7])
+
+
+def remove_tree(path):
+    """shutil.rmtree that also removes read-only files (git's object files, on Windows). A missing path is fine."""
+    import stat
+    if not os.path.lexists(path):
+        return
+
+    def again(func, p, _):
+        os.chmod(p, stat.S_IWRITE)
+        func(p)
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(path, onexc=again)
+    else:
+        shutil.rmtree(path, onerror=again)
 
 
 def setup(topic, dest=".", dry_run=False, log=print):

@@ -43,7 +43,7 @@ import numpy as np
 import scipy.io.wavfile as wavfile
 
 KIT_DIR = os.path.dirname(os.path.abspath(__file__))
-KIT_VERSION = "2026-11-15"   # printed by the notebooks and written to the 'kit' column of every results row
+KIT_VERSION = "2026-11-18"   # printed by the notebooks and written to the 'kit' column of every results row
 
 
 def _coder_dir(coder_dir=None):

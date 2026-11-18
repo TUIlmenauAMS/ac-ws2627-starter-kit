@@ -154,9 +154,15 @@ def c_clone(ctx):
     state = pinned_clone("Python-Audio-Coder", ctx.repo("Python-Audio-Coder"))
     shutil.rmtree(ctx.coder, ignore_errors=True)
     shutil.copytree(ctx.repo("Python-Audio-Coder"), ctx.coder, ignore=shutil.ignore_patterns(".git"))
-    rev = subprocess.run(["git", "-C", ctx.repo("Python-Audio-Coder"), "rev-parse", "--short", "HEAD"],
-                         capture_output=True, text=True).stdout.strip()
-    return "%s (commit %s)" % (state, rev)
+    sys.path.insert(0, KIT)
+    import setup_topic
+    src = ctx.repo("Python-Audio-Coder")
+    # plain files: no nested repository in the group's GitLab repository, a .kit_source file instead
+    assert not os.path.exists(os.path.join(src, ".git")), "the clone still has a .git folder"
+    assert os.path.isfile(os.path.join(src, setup_topic.MARKER)), "no %s file in the clone" % setup_topic.MARKER
+    rev = setup_topic.head(src)
+    assert rev == setup_topic.REPOS["Python-Audio-Coder"], "marker says %s" % rev
+    return "%s (commit %s, plain folder with %s)" % (state, rev[:7], setup_topic.MARKER)
 
 
 @check("setup.testset", "prepare the test set (SQAM if SQAM_ZIP is set, else the fallback set)")
@@ -419,8 +425,8 @@ def c_notebook(ctx):
             # the "your topic's baseline" cell (WP1): a fast topic, so the check stays short
             c.source = c.source.replace("TOPIC = 1", "TOPIC = 2", 1)
     assert n_changed == 1, "the notebook's test-set cell has changed: update this check"
-    # a ready clone (with .git, so the notebook sees the pinned commit) saves time; the notebook
-    # clones itself when the folder is missing
+    # a ready clone (with its .kit_source file, so the notebook sees the pinned commit) saves time;
+    # the notebook clones itself when the folder is missing
     shutil.copytree(ctx.repo("Python-Audio-Coder"), os.path.join(d, "Python-Audio-Coder"))
     ep = ExecutePreprocessor(timeout=1800, kernel_name="python3")
     saved = {v: os.environ.get(v) for v in ("MPLBACKEND", "MPLCONFIGDIR")}
@@ -449,6 +455,80 @@ def c_notebook(ctx):
         assert os.path.isfile(os.path.join(d, "results", "baseline.csv")), "the baseline cell wrote no results/baseline.csv"
         extra = "; baseline cell (topic 2) wrote results/baseline.csv"
     return "%s%s (executed with %s; in %s)" % (line.strip(), extra, how, d)
+
+
+GITLAB_SNIPPET = """
+import os, sys
+sys.path.insert(0, os.path.join($PROJECT, 'starter_kit'))
+os.environ['AC_CODER_DIR'] = os.path.join($PROJECT, 'Python-Audio-Coder')
+import gitlab_repo
+k = gitlab_repo.use_repository($URL, None, 'Kit Check', 'kit.check@example.org', project=$PARENT)
+assert os.getcwd() == os.path.join($PARENT, $NAME), os.getcwd()
+assert os.path.abspath(k.__file__).startswith(os.path.join($PARENT, $NAME)), k.__file__
+assert os.environ['AC_CODER_DIR'] == os.path.join($PARENT, $NAME, 'Python-Audio-Coder')
+assert len(k.load_manifest()) > 0
+print('OK', os.getcwd())
+"""
+
+
+def _git_out(*args, cwd=None):
+    return subprocess.run(["git"] + list(args), cwd=cwd, capture_output=True, text=True, check=True).stdout.strip()
+
+
+@check("gitlab", "notebook's last cell (gitlab_repo.py): first push of the setup, later session from the repository")
+def c_gitlab(ctx):
+    base = os.path.join(ctx.workdir, "gitlab")
+    shutil.rmtree(base, ignore_errors=True)
+    proj = os.path.join(base, "colab_session1")          # what /content looks like after the demo notebook
+    os.makedirs(os.path.join(proj, "results"))
+    shutil.copytree(ctx.kit, os.path.join(proj, "starter_kit"),
+                    ignore=shutil.ignore_patterns(".git", "testset", "__pycache__", ".ipynb_checkpoints"))
+    shutil.copytree(ctx.testset_dir, os.path.join(proj, "starter_kit", "testset"))   # built in session 1
+    shutil.copytree(ctx.repo("Python-Audio-Coder"), os.path.join(proj, "Python-Audio-Coder"))
+    with open(os.path.join(proj, "results", "baseline.csv"), "w") as f:
+        f.write("testset,clip\nx,y\n")
+    report = []
+    for variant in ("empty", "with_readme"):              # GitLab project created empty, or with a README
+        bare = os.path.join(base, "remote_%s" % variant, "ac-ws2627-p99a.git")
+        os.makedirs(bare)
+        _git_out("init", "-q", "--bare", cwd=bare)
+        url = "file://" + bare
+        if variant == "with_readme":
+            seed = os.path.join(base, "seed")
+            _git_out("init", "-q", "-b", "main", seed)
+            open(os.path.join(seed, "README.md"), "w").write("# group repository\n")
+            _git_out("add", "-A", cwd=seed)
+            _git_out("-c", "user.name=x", "-c", "user.email=x@example.org", "commit", "-q", "-m", "init", cwd=seed)
+            _git_out("push", "-q", url, "main", cwd=seed)
+        q = lambda v: repr(v)
+        # session 1: copy the setup in, commit, push, then work from the repository
+        out = ctx.run_py(GITLAB_SNIPPET, proj, PROJECT=q(proj), PARENT=q(proj), URL=q(url),
+                         NAME=q("ac-ws2627-p99a"))
+        assert "Baseline commit" in out and "OK" in out, out[-600:]
+        files = _git_out("ls-tree", "-r", "--name-only", "main", cwd=bare).splitlines()
+        modes = _git_out("ls-tree", "-r", "main", cwd=bare)
+        for f in ("starter_kit/ac_kit.py", "starter_kit/gitlab_repo.py", "Python-Audio-Coder/audio_encoder.py",
+                  "Python-Audio-Coder/.kit_source", "results/baseline.csv", ".gitignore"):
+            assert f in files, "%s missing in the pushed commit" % f
+        assert not any(f.startswith("starter_kit/testset/") for f in files), "test recordings were committed"
+        assert not any(l.startswith("160000") for l in modes.splitlines()), "a nested repository (gitlink) was committed"
+        gi = _git_out("show", "main:.gitignore", cwd=bare)
+        assert "testset/" in gi and "TECH3253_SQAM_FLAC.zip" in gi, gi
+        if variant == "with_readme":
+            assert "README.md" in files, "the existing README was lost"
+        # later session, another member: fresh folder, only the kit from GitHub, nothing to copy
+        later = os.path.join(base, "colab_session2_%s" % variant)
+        shutil.copytree(os.path.join(proj, "starter_kit"), os.path.join(later, "starter_kit"),
+                        ignore=shutil.ignore_patterns("testset"))
+        shutil.copytree(ctx.testset_dir, os.path.join(later, "starter_kit", "testset"))
+        n_before = _git_out("rev-list", "--count", "main", cwd=bare)
+        out2 = ctx.run_py(GITLAB_SNIPPET, later, PROJECT=q(later), PARENT=q(later), URL=q(url),
+                          NAME=q("ac-ws2627-p99a"))
+        assert "cloned" in out2 and "OK" in out2 and "Baseline commit" not in out2, out2[-600:]
+        assert _git_out("rev-list", "--count", "main", cwd=bare) == n_before, "the later session committed"
+        shutil.rmtree(os.path.join(proj, "ac-ws2627-p99a"))
+        report.append("%s: %d files pushed" % (variant, len(files)))
+    return "; ".join(report)
 
 
 def exec_notebook_cells(ctx, nb, d):

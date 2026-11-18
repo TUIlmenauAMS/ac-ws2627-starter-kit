@@ -6,6 +6,8 @@ Every group measures bitrate and quality the same way, so all papers report comp
 Start with **`starter_kit_demo.ipynb`** in Google Colab: it sets everything up, runs a first
 rate–quality sweep and checks that your numbers match the reference. Then read your topic's section
 in **`START_HERE.md`**: what your topic needs (one setup command) and the one command for the baseline in your proposal.
+The notebook's last cell puts your setup into your group's GitLab repository; in every later Colab session you
+run the first cell and that last cell, and continue from your repository.
 
 ## Contents
 
@@ -18,7 +20,8 @@ in **`START_HERE.md`**: what your topic needs (one setup command) and the one co
 | `reference_results_sqam-v1.csv`, `reference_results_librosa-v1.csv` | Every clip at quality 50/100/200/400 with the unmodified coder, per test set: your setup must reproduce these numbers |
 | `topic15/` | Topic 15 only: LibriSpeech data, PESQ/STOI, bitrate, delay, real-time factor, Opus baseline |
 | `rice_coder/` | Rice coder without `bitstream`/`audio.coders` (they do not install on current Python): Topics 6–9 |
-| `setup_topic.py` | `python starter_kit/setup_topic.py --topic 7`: clones the course repositories your topic needs at the versions the kit was tested with, and copies the kit files the topic needs |
+| `setup_topic.py` | `python starter_kit/setup_topic.py --topic 7`: clones the course repositories your topic needs at the versions the kit was tested with, and copies the kit files the topic needs (plain folders, no `.git` of their own) |
+| `gitlab_repo.py` | The demo notebook's last cell: puts your setup into your group's GitLab repository (first time) and works from that repository in later sessions |
 | `starter_kit_demo.ipynb` | Colab notebook: setup, first sweep, plots, reference check, your topic's baseline |
 | `START_HERE.md` | One section per topic: what you need, your baseline command, what you change, the checks |
 | `baseline.py` | `python starter_kit/baseline.py --topic 7 --variant a --out results/baseline.csv`: the baseline for your proposal |
@@ -29,7 +32,7 @@ in **`START_HERE.md`**: what your topic needs (one setup command) and the one co
 ## Setup (Colab)
 
 ```python
-!unzip -q starter_kit.zip                  # or: !git clone -q https://github.com/TUIlmenauAMS/ac-ws2627-starter-kit starter_kit
+!unzip -q starter_kit.zip                  # or: !git clone -q https://github.com/TUIlmenauAMS/ac-ws2627-starter-kit starter_kit && rm -rf starter_kit/.git
 !python starter_kit/setup_topic.py --topic 1      # your topic: the course code at the kit's versions
 !pip install -q dahuffman
 import os, sys
@@ -49,6 +52,7 @@ Colab is the tested default, but the kit does not depend on it. You can work loc
    python -m venv .venv            (then activate it: source .venv/bin/activate, on Windows .venv\Scripts\activate)
    pip install numpy scipy matplotlib pandas soundfile dahuffman jupyter
    git clone https://github.com/TUIlmenauAMS/ac-ws2627-starter-kit starter_kit     (or unzip starter_kit.zip)
+   (then delete the folder starter_kit/.git, so that the kit's files become part of your own repository)
    python starter_kit/setup_topic.py --topic 1      (your topic number)
    ```
 3. Open `starter_kit/starter_kit_demo.ipynb` in VS Code (Python and Jupyter extensions) or with `jupyter notebook`, started from that project folder, and run all cells. It must end with "setup matches the reference", exactly as in Colab.
@@ -63,6 +67,26 @@ Python-Audio-Coder (Colab-safe `sound.py`, the window in `psyac_quantization.py`
 `lpcexample.py`, the optimization examples, `LDFB.py`, mono files in `psyacpostfilterFromFile.py`) and in
 FilterBanks_FastPythonImplementation_Classes (`LDFBclass` now reconstructs perfectly). The commits the kit uses
 include these fixes: do not use a clone from before November 2026.
+
+The cloned folders have no `.git` folder of their own: a small file `.kit_source` in each records the repository
+and commit. So you commit them to your group's repository as ordinary files, together with your changes. (A folder
+with its own `.git` would be stored only as a link, and your changes to it would be missing.)
+
+## Your group's GitLab repository
+
+The demo notebook's last cell does this for you (`gitlab_repo.py`). Give it your repository's https address, your
+name and e-mail, and a GitLab access token (user settings → Access tokens, scopes `read_repository` and
+`write_repository`; kept only for the session, never committed).
+
+- **First time** (one member, after the baseline cell): it copies `starter_kit/`, the course code the kit set up and
+  `results/` into the repository, adds a `.gitignore` (the SQAM test recordings, downloads and caches are never
+  committed), commits, pushes and prints the commit hash. With `results/baseline.csv` in it, that is the baseline
+  commit for your proposal.
+- **Every later session** (every member): run the notebook's first cell, then the last one. It clones the
+  repository and switches into it: working folder, kit and coder come from your repository, and the test set is
+  prepared there. Commit and push your work from there: `git add -A && git commit -m "..." && git push`.
+
+On your own computer, clone your repository with your usual git login and work in it (`gitlab_repo.use_repository(url, token=None, ...)` does the same as the notebook cell).
 
 ## Measurement rules (use them in your paper)
 
@@ -141,7 +165,7 @@ Copy `Python-Audio-Coder` to a folder of your own, change it there, and pass tha
 `k.quality_sweep(clips, out_csv='results.csv', method='KBD beta=4', coder_dir='my_coder')`.
 If your encoder takes extra command-line arguments, pass `extra_args=[...]`.
 
-Tested on 15 Nov 2026 with Python 3.12, NumPy 2.5 and SciPy 1.18 (`tests/run_checks.py`, at the commits in `setup_topic.py`).
+Tested on 18 Nov 2026 with Python 3.13, NumPy 2.5 and SciPy 1.18 (`tests/run_checks.py` with the fallback test set; the SQAM test set on 15 Nov), at the commits in `setup_topic.py`.
 
 ## Licence
 

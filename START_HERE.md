@@ -10,7 +10,8 @@ reference. Below, "the coder" means that folder. Then set up the rest of what yo
 python starter_kit/setup_topic.py --topic N
 ```
 It clones the other course repositories your topic needs (at the kit's versions) and copies the kit files listed
-below into the coder. Running it again is safe. Measurement rules: `starter_kit/README.md`.
+below into the coder. Running it again is safe. The notebook's last cell puts all of this into your group's
+GitLab repository (README: "Your group's GitLab repository"). Measurement rules: `starter_kit/README.md`.
 
 ## Topic 1: Sine vs. KBD windows in the MDCT coder
 

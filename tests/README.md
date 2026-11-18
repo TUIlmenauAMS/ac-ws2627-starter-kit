@@ -27,7 +27,7 @@ Test set: with the environment variable `SQAM_ZIP` set, the checks use the SQAM 
 
 | Check | What it does | If it fails |
 | --- | --- | --- |
-| `setup.clone` | Clones Python-Audio-Coder at the commit pinned in `setup_topic.py`, as the demo notebook does | Network, or the repository moved |
+| `setup.clone` | Clones Python-Audio-Coder at the commit pinned in `setup_topic.py`, as the demo notebook does; the folder has no `.git`, only its `.kit_source` file | Network, or the repository moved |
 | `setup.testset` | Builds the test set (SQAM from `SQAM_ZIP`, else the fallback set) | Wrong zip (SHA-256), or the clip hashes changed |
 | `reference` | `quality_sweep` on all clips (`--quick`: tuning clips) at quality 50/100/200/400 reproduces the reference file: bits/sample within 1e-3, SNR within 0.01 dB, percloss within 1 % | **The most important check.** Students' numbers would no longer match: the coder repository or a measurement function changed |
 | `monotonic` | For every clip, bitrate and SNR rise and percloss falls with quality (measured rows and both reference files) | A clip with digital silence, or a broken coder |
@@ -39,6 +39,7 @@ Test set: with the environment variable `SQAM_ZIP` set, the checks use the SQAM 
 | `topic3.*` | Low-delay filter bank: N = 128…2048 perfect reconstruction with delay N, same shapes as `MDCTanafb`, `filterbank_report`, coder copies byte-identical with `--filterbank mdct` | `topic3/` or the FilterBanks repository changed |
 | `topic5.*` | Window family (sine at p = 0, perfect reconstruction), objectives improvable, evaluation counter exact across Random Directions' worker processes, window coder copies byte-identical, `compare_optimizers.py` | `topic5/` or the Random Directions repository changed |
 | `baseline.*` | `baseline.py` for topics 2 and 12 (lossy, rows equal the reference), 7 and 9 (lossless, exact); topic 15 only with `RUN_T15=1` (LibriSpeech download, needs pesq, pystoi, ffmpeg) | `baseline.py` or the coders changed |
+| `gitlab` | The notebook's last cell (`gitlab_repo.py`) against two local stand-ins for a GitLab project (created empty, and with a README): the first session copies kit, coder and `results/` in, commits and pushes (no test recordings, no nested repository, `.gitignore` written, README kept); a later session only clones and works from the repository | `gitlab_repo.py` or `setup_topic.py` changed |
 | `notebook` | Zips the kit as for the students (without `testset/` and `__pycache__`), runs `starter_kit_demo.ipynb` with nbconvert (test-set cell pointed at the same test set; the topic cell set to topic 2) and looks for "setup matches the reference" | The notebook no longer runs top to bottom |
 
 Not in `--quick`: `topics.t1_kbd_coder`, `topics.t5_examples`, `topics.t5_bbo`, `topics.t7_lmslossless`,
