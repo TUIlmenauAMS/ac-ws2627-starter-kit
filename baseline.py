@@ -190,7 +190,7 @@ def main(argv=None):
                 raise SystemExit("course coder not found in %s: clone Python-Audio-Coder or pass --coder-dir" % coder_dir)
             tid = lossy_baseline(a.topic, a.variant, a.out, testset_dir, coder_dir, workdir)
     print("\nwrote %s (test set %s) in %.0f s" % (a.out, tid, time.perf_counter() - t0))
-    print("Put it into your GitLab repository: the demo notebook's last cell does that the first time;")
+    print("Put it into your GitLab repository: the demo notebook's GitLab cell does that the first time;")
     print("afterwards, from your repository folder:")
     print("  git add %s" % a.out)
     print('  git commit -m "Baseline for topic %d%s (%s)"' % (a.topic, a.variant, tid))

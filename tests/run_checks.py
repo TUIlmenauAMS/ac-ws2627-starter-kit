@@ -475,7 +475,7 @@ def _git_out(*args, cwd=None):
     return subprocess.run(["git"] + list(args), cwd=cwd, capture_output=True, text=True, check=True).stdout.strip()
 
 
-@check("gitlab", "notebook's last cell (gitlab_repo.py): first push of the setup, later session from the repository")
+@check("gitlab", "notebook's GitLab cell (gitlab_repo.py): first push, later session, save()")
 def c_gitlab(ctx):
     base = os.path.join(ctx.workdir, "gitlab")
     shutil.rmtree(base, ignore_errors=True)
@@ -526,9 +526,61 @@ def c_gitlab(ctx):
                           NAME=q("ac-ws2627-p99a"))
         assert "cloned" in out2 and "OK" in out2 and "Baseline commit" not in out2, out2[-600:]
         assert _git_out("rev-list", "--count", "main", cwd=bare) == n_before, "the later session committed"
+        if variant == "empty":
+            report.append(_check_save(ctx, bare, os.path.join(proj, "ac-ws2627-p99a"),
+                                      os.path.join(later, "ac-ws2627-p99a")))
         shutil.rmtree(os.path.join(proj, "ac-ws2627-p99a"))
         report.append("%s: %d files pushed" % (variant, len(files)))
     return "; ".join(report)
+
+
+SAVE_SNIPPET = """
+import sys
+sys.path.insert(0, 'starter_kit')
+import gitlab_repo
+gitlab_repo.save($MSG)
+"""
+
+
+def _check_save(ctx, bare, a, b):
+    """gitlab_repo.save(): two members' sessions a and b (clones of the same repository)."""
+    def edit(repo, rel, old, new):
+        p = os.path.join(repo, rel)
+        t = open(p).read()
+        assert t.count(old) >= 1, "%s: '%s' not found" % (rel, old)
+        open(p, "w").write(t.replace(old, new, 1))
+
+    def save(repo, msg):
+        return ctx.run_py(SAVE_SNIPPET, repo, MSG=repr(msg))
+
+    def remote_file(rel, branch="main"):
+        return _git_out("show", "%s:%s" % (branch, rel), cwd=bare)
+
+    out = save(a, "nothing changed")
+    assert "Nothing new to save" in out, out[-300:]
+    # b changes the encoder and saves; a changes the decoder and saves: both end up on main
+    edit(b, "Python-Audio-Coder/audio_encoder.py", "import", "import  ")
+    assert "Saved in GitLab" in save(b, "member B: encoder")
+    edit(a, "Python-Audio-Coder/audio_decoder.py", "import", "import  ")
+    out = save(a, "member A: decoder")
+    assert "Saved in GitLab" in out, out[-300:]
+    assert "import  " in remote_file("Python-Audio-Coder/audio_encoder.py"), "B's change lost"
+    assert "import  " in remote_file("Python-Audio-Coder/audio_decoder.py"), "A's change lost"
+    # both change the same line: the first one wins on main, the second goes to a branch of its own
+    head_before = None
+    _git_out("-C", b, "pull", "-q")
+    edit(b, "starter_kit/START_HERE.md", "# Start here", "# Start here (B)")
+    assert "Saved in GitLab" in save(b, "member B: title")
+    head_before = _git_out("rev-parse", "main", cwd=bare)
+    edit(a, "starter_kit/START_HERE.md", "# Start here", "# Start here (A)")
+    out = save(a, "member A: title")
+    assert "NOT on main" in out and "START_HERE.md" in out, out[-400:]
+    assert _git_out("rev-parse", "main", cwd=bare) == head_before, "main was changed by the conflicting save"
+    branches = _git_out("branch", "--list", "save-*", cwd=bare)
+    assert branches, "no save-* branch"
+    assert "(A)" in remote_file("starter_kit/START_HERE.md", branches.split()[-1]), "A's version not on its branch"
+    assert not os.path.exists(os.path.join(a, ".git", "MERGE_HEAD")), "merge left half-done"
+    return "save(): nothing to save, two members' changes merged, same-line change kept on %s" % branches.split()[-1]
 
 
 def exec_notebook_cells(ctx, nb, d):

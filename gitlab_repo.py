@@ -1,6 +1,6 @@
 """Put your setup into your group's GitLab repository, and work from that repository in later sessions.
 
-In Colab this is the last cell of starter_kit_demo.ipynb:
+In Colab this is the GitLab cell ("Your group's GitLab repository") of starter_kit_demo.ipynb:
 
     import getpass, gitlab_repo
     k = gitlab_repo.use_repository(GITLAB_URL, getpass.getpass('GitLab access token: '), GIT_NAME, GIT_EMAIL)
@@ -13,12 +13,21 @@ Later sessions (the repository already has starter_kit/): it only clones the rep
 Either way it then switches into the repository: the working folder, the kit (`k`) and the coder
 (AC_CODER_DIR) all come from your repository, and the test set is prepared there.
 
+Saving your work (do it before you close Colab: Colab forgets everything at the end of a session):
+
+    gitlab_repo.save("what you changed")
+
+It gets your teammates' latest changes, commits yours and pushes. If a teammate changed the same lines,
+nothing on the main branch is overwritten: your version goes to a branch of its own and the message
+says what to do.
+
 The access token (GitLab: user settings -> Access tokens, scopes read_repository and write_repository)
 is kept only for this session, in a file outside the repository: it is never committed.
 On your own computer you can pass token=None to use the git login you already have.
 """
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -200,9 +209,69 @@ def start(repo):
             and os.path.abspath(old_testset) != os.path.abspath(new_testset)):
         shutil.copytree(old_testset, new_testset)     # same clips (checked by hash when built): no new download
     tid = ac_kit.prepare_test_set()
-    print("working in %s (kit %s, test set %s). Commit and push your work from here:" % (repo, ac_kit.KIT_VERSION, tid))
-    print('  !git add -A && git commit -m "what you changed" && git push')
+    print("working in %s (kit %s, test set %s)." % (repo, ac_kit.KIT_VERSION, tid))
+    print('Save your work before you close Colab:  gitlab_repo.save("what you changed")')
     return ac_kit
+
+
+def _toplevel(path=None):
+    out = _run(["rev-parse", "--show-toplevel"], cwd=path or os.getcwd(), check=False)
+    return out if out and os.path.isdir(out) else None
+
+
+def save(message, repo=None):
+    """Save your work in GitLab: get your teammates' latest changes, commit yours, push.
+
+    `message` says what you changed (e.g. "KBD window with beta = 4 in encoder and decoder").
+    If a teammate changed the same lines in the meantime, the main branch is left as it is: your version
+    is pushed to a branch of its own (printed), so nothing is lost. Returns the commit hash."""
+    message = (message or "").strip()
+    if not message:
+        raise SystemExit('Say what you changed, e.g. gitlab_repo.save("KBD window in encoder and decoder")')
+    repo = repo or _toplevel()
+    if not repo or not os.path.isdir(os.path.join(repo, "starter_kit")):
+        raise SystemExit("You are not in your group's repository: run the first cell and the GitLab cell of "
+                         "the demo notebook first, then save again.")
+    if not _run(["config", "user.email"], cwd=repo, check=False):
+        raise SystemExit("Set GIT_NAME and GIT_EMAIL in the notebook's GitLab cell, run it, then save again.")
+    _run(["add", "-A"], cwd=repo)
+    if _run(["diff", "--cached", "--name-only"], cwd=repo):
+        _run(["commit", "-q", "-m", message], cwd=repo)
+        made = True
+    else:
+        made = False
+    branch = _run(["rev-parse", "--abbrev-ref", "HEAD"], cwd=repo)
+    for attempt in (1, 2):                      # a teammate may push in between: try once more
+        _run(["fetch", "-q", "origin"], cwd=repo)
+        has_remote = bool(_run(["rev-parse", "--verify", "-q", "origin/%s" % branch], cwd=repo, check=False))
+        if has_remote:
+            merged = subprocess.run(["git", "merge", "-q", "--no-edit", "origin/%s" % branch], cwd=repo,
+                                    capture_output=True, text=True, env=dict(os.environ, GIT_TERMINAL_PROMPT="0"))
+            if merged.returncode != 0:
+                files = _run(["diff", "--name-only", "--diff-filter=U"], cwd=repo, check=False).split()
+                _run(["merge", "--abort"], cwd=repo, check=False)
+                who = re.sub(r"[^a-z0-9]", "", (_run(["config", "user.name"], cwd=repo, check=False) or "")
+                             .split(" ")[0].lower()) or "member"
+                side = "save-%s-%s" % (who, _run(["log", "-1", "--format=%cd", "--date=format:%m%d-%H%M"], cwd=repo))
+                _run(["push", "-q", "origin", "HEAD:refs/heads/%s" % side], cwd=repo)
+                print("Your work is saved in GitLab on the branch '%s', NOT on %s." % (side, branch))
+                print("A teammate changed the same lines in: %s" % (", ".join(files) or "(see GitLab)"))
+                print("Decide together which version to keep (GitLab shows both: Code -> Branches), then ask in the "
+                      "forum if you need help bringing them together.")
+                return _run(["rev-parse", "HEAD"], cwd=repo)
+        ahead = _run(["rev-list", "--count", "origin/%s..HEAD" % branch], cwd=repo, check=False) if has_remote else "1"
+        if ahead in ("", "0"):
+            print("Nothing new to save: GitLab already has everything." if not made else "Saved.")
+            return _run(["rev-parse", "HEAD"], cwd=repo)
+        r = subprocess.run(["git", "push", "-q", "-u", "origin", "HEAD"], cwd=repo, capture_output=True, text=True,
+                           env=dict(os.environ, GIT_TERMINAL_PROMPT="0"))
+        if r.returncode == 0:
+            commit = _run(["rev-parse", "HEAD"], cwd=repo)
+            print("Saved in GitLab: %s (%s)" % (commit[:8], message if made else "teammates' changes merged"))
+            return commit
+        if attempt == 2:
+            _run(["push", "-q", "-u", "origin", "HEAD"], cwd=repo)   # raises with the git message and a hint
+    return _run(["rev-parse", "HEAD"], cwd=repo)
 
 
 def use_repository(url, token=None, name="", email="", project=None):

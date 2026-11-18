@@ -6,8 +6,8 @@ Every group measures bitrate and quality the same way, so all papers report comp
 Start with **`starter_kit_demo.ipynb`** in Google Colab: it sets everything up, runs a first
 rate–quality sweep and checks that your numbers match the reference. Then read your topic's section
 in **`START_HERE.md`**: what your topic needs (one setup command) and the one command for the baseline in your proposal.
-The notebook's last cell puts your setup into your group's GitLab repository; in every later Colab session you
-run the first cell and that last cell, and continue from your repository.
+The notebook's GitLab cell puts your setup into your group's GitLab repository; in every later Colab session you
+run the first cell and the GitLab cell, and continue from your repository. `gitlab_repo.save("...")` saves your work.
 
 ## Contents
 
@@ -21,7 +21,7 @@ run the first cell and that last cell, and continue from your repository.
 | `topic15/` | Topic 15 only: LibriSpeech data, PESQ/STOI, bitrate, delay, real-time factor, Opus baseline |
 | `rice_coder/` | Rice coder without `bitstream`/`audio.coders` (they do not install on current Python): Topics 6–9 |
 | `setup_topic.py` | `python starter_kit/setup_topic.py --topic 7`: clones the course repositories your topic needs at the versions the kit was tested with, and copies the kit files the topic needs (plain folders, no `.git` of their own) |
-| `gitlab_repo.py` | The demo notebook's last cell: puts your setup into your group's GitLab repository (first time) and works from that repository in later sessions |
+| `gitlab_repo.py` | The demo notebook's GitLab cell: puts your setup into your group's GitLab repository (first time) and works from that repository in later sessions; `save("...")` saves your work |
 | `starter_kit_demo.ipynb` | Colab notebook: setup, first sweep, plots, reference check, your topic's baseline |
 | `START_HERE.md` | One section per topic: what you need, your baseline command, what you change, the checks |
 | `baseline.py` | `python starter_kit/baseline.py --topic 7 --variant a --out results/baseline.csv`: the baseline for your proposal |
@@ -74,7 +74,7 @@ with its own `.git` would be stored only as a link, and your changes to it would
 
 ## Your group's GitLab repository
 
-The demo notebook's last cell does this for you (`gitlab_repo.py`). Give it your repository's https address, your
+The demo notebook's GitLab cell ("Your group's GitLab repository") does this for you (`gitlab_repo.py`). Give it your repository's https address, your
 name and e-mail, and a GitLab access token (user settings → Access tokens, scopes `read_repository` and
 `write_repository`; kept only for the session, never committed).
 
@@ -82,9 +82,13 @@ name and e-mail, and a GitLab access token (user settings → Access tokens, sco
   `results/` into the repository, adds a `.gitignore` (the SQAM test recordings, downloads and caches are never
   committed), commits, pushes and prints the commit hash. With `results/baseline.csv` in it, that is the baseline
   commit for your proposal.
-- **Every later session** (every member): run the notebook's first cell, then the last one. It clones the
+- **Every later session** (every member): run the notebook's first cell, then the GitLab cell. It clones the
   repository and switches into it: working folder, kit and coder come from your repository, and the test set is
-  prepared there. Commit and push your work from there: `git add -A && git commit -m "..." && git push`.
+  prepared there.
+- **Saving your work** (before you close Colab): `gitlab_repo.save("what you changed")`. It gets your teammates'
+  latest changes, commits yours and pushes. If a teammate changed the same lines, main is left as it is and your
+  version is pushed to a branch of its own (`save-<name>-<date>`): decide together which to keep.
+- **Changing a file in Colab:** Files panel (folder icon on the left) → double-click the file; it is saved automatically.
 
 On your own computer, clone your repository with your usual git login and work in it (`gitlab_repo.use_repository(url, token=None, ...)` does the same as the notebook cell).
 
